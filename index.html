@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Yatzy</title>
+
+<style>
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f2f2f2;
+  }
+
+  header {
+    background: #2c2c2c;
+    color: white;
+    padding: 10px;
+    text-align: center;
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  .meta {
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+    background: #fff;
+    border-bottom: 1px solid #ccc;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .meta input,
+  .meta select,
+  .meta button {
+    font-size: 14px;
+    padding: 6px;
+  }
+
+  .table-wrap {
+    overflow: auto;
+    height: calc(100vh - 96px);
+    background: #fff;
+    padding: 0 6px;
+  }
+
+  table {
+    border-collapse: collapse;
+    table-layout: fixed;
+    width: 100%;
+  }
+
+  th, td {
+    border: 1px solid #ddd;
+    padding: 2px;
+    font-size: 14px;
+    background: #fff;
+  }
+
+  thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: #ddd;
+    text-align: center;
+    font-weight: 600;
+  }
+
+  .category {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: #fff;
+    text-align: left;
+    font-size: 13px;
+    line-height: 1.2;
+  }
+
+  thead .category {
+    z-index: 4;
+    background: #eee;
+  }
+
+  .grey {
+    background: #e6e6e6;
+    font-weight: 600;
+  }
+
+  input.score {
+    width: 100%;
+    border: none;
+    text-align: center;
+    font-size: 14px;
+    padding: 2px;
+    background: transparent;
+  }
+
+  input.score:disabled {
+    background: #f0f0f0;
+    font-weight: 600;
+  }
+
+  input.name {
+    width: 100%;
+    border: none;
+    text-align: center;
+    font-weight: 600;
+    font-size: 12px;
+    padding: 2px;
+    background: transparent;
+  }
+</style>
+</head>
+
+<body>
+
+<header>YATZY</header>
+
+<div class="meta">
+  <label>Date:
+    <input type="date" id="date">
+  </label>
+
+  <label>Dice:
+    <select id="dice">
+      <option value="5">5</option>
+      <option value="6" selected>6</option>
+    </select>
+  </label>
+
+  <button onclick="addPlayer()">Add player</button>
+  <button onclick="exportImage()">Export image</button>
+  <button onclick="newGame()">New game</button>
+</div>
+
+<div class="table-wrap">
+  <table id="table"></table>
+</div>
+
+<script>
+/* ================= DATA ================= */
+
+const categories = [
+  { name: "1'ere", upper: true },
+  { name: "2'ere", upper: true },
+  { name: "3'ere", upper: true },
+  { name: "4'ere", upper: true },
+  { name: "5'ere", upper: true },
+  { name: "6'ere", upper: true },
+
+  { name: "SUM ØVRE", calc: "upper", grey: true },
+  { name: "BONUS", calc: "bonus", grey: true },
+
+  { name: "1 par" },
+  { name: "2 par" },
+  { name: "3 par", sixOnly: true },
+  { name: "3 ens" },
+  { name: "4 ens" },
+  { name: "2×3 ens", sixOnly: true },
+  { name: "Lille str." },
+  { name: "Stor str." },
+  { name: "Royal", sixOnly: true },
+  { name: "Hus" },
+  { name: "Chance" },
+  { name: "YATZY" },
+
+  { name: "TOTAL", calc: "total", grey: true }
+];
+
+let players = [];
+
+/* ================= RULES ================= */
+
+function rules() {
+  const dice = Number(diceSelect.value);
+  return {
+    bonusThreshold: dice === 5 ? 63 : 84,
+    yatzySum: dice === 5 ? 30 : 36
+  };
+}
+
+/* ================= RENDER ================= */
+
+const table = document.getElementById("table");
+
+function render() {
+  table.innerHTML = "";
+  const r = rules();
+  const dice = Number(diceSelect.value);
+
+  const colgroup = document.createElement("colgroup");
+  const catCol = document.createElement("col");
+  catCol.style.width = "80px";
+  colgroup.appendChild(catCol);
+  players.forEach(() => colgroup.appendChild(document.createElement("col")));
+  table.appendChild(colgroup);
+
+  const thead = table.createTHead();
+  const hr = thead.insertRow();
+  const corner = document.createElement("th");
+  corner.className = "category";
+  hr.appendChild(corner);
+
+  players.forEach((p, i) => {
+    const th = document.createElement("th");
+    const name = document.createElement("input");
+    name.className = "name";
+    name.placeholder = `P${i + 1}`;
+    name.value = p.name;
+    name.oninput = () => { p.name = name.value; saveGame(); };
+    th.appendChild(name);
+    hr.appendChild(th);
+  });
+
+  const tbody = table.createTBody();
+
+  categories.forEach((cat, ci) => {
+    const row = tbody.insertRow();
+
+    const isGrey = cat.grey || cat.sixOnly;
+    const catCell = row.insertCell();
+    catCell.className = "category" + (isGrey ? " grey" : "");
+    catCell.textContent =
+      cat.name === "YATZY"
+        ? `YATZY (${r.yatzySum}+50)`
+        : cat.name;
+
+    players.forEach(p => {
+      const cell = row.insertCell();
+      if (isGrey) cell.className = "grey";
+
+      const input = document.createElement("input");
+      input.className = "score";
+      input.type = "number";
+
+      if (cat.calc) {
+        input.disabled = true;
+      } else if (cat.sixOnly && dice === 5) {
+        input.value = 0;
+        input.disabled = true;
+        p.scores[ci] = 0;
+      } else {
+        input.disabled = false;
+        input.value = p.scores[ci] ?? "";
+        input.oninput = () => {
+          p.scores[ci] = input.value;
+          calculate();
+          saveGame();
+        };
+      }
+
+      p.inputs[ci] = input;
+      cell.appendChild(input);
+    });
+  });
+
+  calculate();
+}
+
+/* ================= CALC ================= */
+
+function calculate() {
+  const r = rules();
+
+  players.forEach(p => {
+    let upper = 0;
+    let total = 0;
+    let filled = true;
+
+    categories.forEach((cat, i) => {
+      const inp = p.inputs[i];
+      if (!cat.calc) {
+        if (inp.value === "") filled = false;
+        total += Number(inp.value) || 0;
+      }
+      if (cat.upper) upper += Number(inp.value) || 0;
+    });
+
+    categories.forEach((cat, i) => {
+      const inp = p.inputs[i];
+      if (!inp) return;
+
+      if (cat.calc === "upper") inp.value = upper;
+      if (cat.calc === "bonus") inp.value = upper >= r.bonusThreshold ? 50 : 0;
+      if (cat.calc === "total")
+        inp.value = filled ? total + (upper >= r.bonusThreshold ? 50 : 0) : "";
+    });
+  });
+}
+
+/* ================= PLAYERS ================= */
+
+function addPlayer() {
+  players.push({ name: "", scores: [], inputs: [] });
+  render();
+  saveGame();
+}
+
+/* ================= STORAGE ================= */
+
+function saveGame() {
+  localStorage.setItem("yatzyGame", JSON.stringify({
+    date: dateInput.value,
+    dice: diceSelect.value,
+    players
+  }));
+}
+
+function loadGame() {
+  const data = JSON.parse(localStorage.getItem("yatzyGame"));
+  if (!data) return;
+  dateInput.value = data.date;
+  diceSelect.value = data.dice;
+  players = data.players || [];
+}
+
+/* ================= EXPORT (lazy, offline-safe) ================= */
+
+function exportImage() {
+  loadHtml2Canvas().then(() => {
+    html2canvas(document.querySelector(".table-wrap"), {
+      backgroundColor: "#fff",
+      scale: 2
+    }).then(canvas => {
+      const a = document.createElement("a");
+      a.download = `yatzy-${dateInput.value}.png`;
+      a.href = canvas.toDataURL("image/png");
+      a.click();
+    });
+  }).catch(() => alert("Export requires one online load first."));
+}
+
+function loadHtml2Canvas() {
+  return new Promise((resolve, reject) => {
+    if (window.html2canvas) return resolve();
+    const s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+/* ================= INIT ================= */
+
+const dateInput = document.getElementById("date");
+const diceSelect = document.getElementById("dice");
+
+dateInput.value = new Date().toISOString().slice(0, 10);
+diceSelect.onchange = () => { render(); saveGame(); };
+
+loadGame();
+players.length ? render() : (addPlayer(), addPlayer());
+
+function newGame() {
+  if (!confirm("Start new game?")) return;
+  localStorage.removeItem("yatzyGame");
+  location.reload();
+}
+</script>
+
+</body>
+</html>
